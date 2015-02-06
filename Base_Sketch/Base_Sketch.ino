@@ -21,9 +21,9 @@ This code enables the Si470X board to be used as a kind of rudimentary Spectrum 
 #include <Si4703_Breakout.h>
 #include <Wire.h>
 int STATUS_LED = 13;
-int resetPin = 2;
-int SDIO = A4; //SDA/A4 on Arduino
-int SCLK = A5; //SCL/A5 on Arduino
+int resetPin = 4;
+int SDIO = 2; //SDA/A4 on Arduino
+int SCLK = 3;
 char printBuffer[50];
 uint16_t si4703_registers[16]; //There are 16 registers, each 16 bits large
 
@@ -95,24 +95,35 @@ void setup()
 
 void loop()
 {
-  if (Serial.available())  //If we have an open serial port, then:
-  {
-    delay(1000);  // Wait a second for stabilization.
-    channel = readChannel();  // Check what frequency we're on.
-    Serial.print(channel);  // Tell us what frequency we're on.
-    Serial.print(",");  // Print a comma as a delimiter.
-    byte rssi = si4703_registers[STATUSRSSI] & 0x00FF;  // Set up a variable called "rssi" and read the RSSI value into it.
-    Serial.println(rssi, DEC);  // Tell us the RSSI in decimal format.
-    if(channel < 1100)  // If the channel is below the maximum in the FM broadcast band, then:
-    {
-      seek(SEEK_UP);  // Go up by a channel increment (100 kHz in Europe, 200 kHz in the US, where we apparently don't care about band loading.)
-    } 
-    else  // Otherwise:
-    {
-      gotoChannel(871);  // Go back to the bottom of the band,
-      Serial.println("_____________");  // and you've gotta keep 'em separated!
-    } 
+  
+  for (int station=879; station <1080; station +=2){
+   gotoChannel(station);
+   delay(500);
+   channel = readChannel();  // Check what frequency we're on.
+   Serial.print(channel);  // Tell us what frequency we're on.
+   Serial.print(" ");  // Print a comma as a delimiter.
+   byte rssi = si4703_registers[STATUSRSSI] & 0x00FF;  // Set up a variable called "rssi" and read the RSSI value into it.
+   Serial.println(rssi, DEC);  // Tell us the RSSI in decimal format.
   }
+  
+  
+ // if (Serial.available())  //If we have an open serial port, then:
+  //{
+    //delay(1000);  // Wait a second for stabilization.
+    //channel = readChannel();  // Check what frequency we're on.
+    //Serial.print(channel);  // Tell us what frequency we're on.
+    //Serial.print(" ");  // Print a comma as a delimiter.
+    //byte rssi = si4703_registers[STATUSRSSI] & 0x00FF;  // Set up a variable called "rssi" and read the RSSI value into it.
+    //Serial.println(rssi, DEC);  // Tell us the RSSI in decimal format.
+    //if(channel < 1100)  // If the channel is below the maximum in the FM broadcast band, then:
+   // {
+    //  seek(SEEK_UP);  // Go up by a channel increment (100 kHz in Europe, 200 kHz in the US, where we apparently don't care about band loading.)
+   // } 
+    //else  // Otherwise:
+    //{
+     // gotoChannel(871);  // Go back to the bottom of the band,
+    //} 
+  //}
 }
 
 //Given a channel, tune to it
