@@ -1,39 +1,57 @@
 /*
 02/05/2014
 Pete Marchetto
-Standard Beerware License:  This code is public domain but you buy me a beer if you use this and we meet someday.
-I owe a couple of beers to Nate Seidle of SparkFun for his example code.
 
-This code enables the Si470X board to be used as a kind of rudimentary Spectrum Analyzer by sampling the RSSIs of multiple frequencies, then reporting them back over a serial connection.
+Standard Beerware License:  This code is public domain but you buy me a beer 
+if you use this and we meet someday. I owe a couple of beers to Nate Seidle of 
+SparkFun for his example code.
 
- To use this code, connect the following 5 wires:
- Arduino : Si470x board
- 3.3V : VCC
- GND : GND
- A5 : SCLK
- A4 : SDIO
- D2 : RST
- A0 : Trimpot (optional)
- 
- See this repository for more information on the Si470X board: https://github.com/sparkfun/Si4703_FM_Tuner_Evaluation_Board
+This code enables the Si470X board to be used as a kind of rudimentary 
+Spectrum Analyzer by sampling the RSSIs of multiple frequencies, then reporting 
+them back over a serial connection.
+
+To use this code, connect the following 5 wires:
+Arduino : Si470x board
+3.3V : VCC
+GND : GND
+A5 : SCLK
+A4 : SDIO
+D2 : RST
+A0 : Trimpot (optional)
+
+See this repository for more information on the Si470X board: 
+https://github.com/sparkfun/Si4703_FM_Tuner_Evaluation_Board
+
+Changelog:
+- 2/6/15 Leeman - Commit changes that force scanning of all US FM stations
+- 3/1/15 Leeman - Clean code and use better output technique
+
 */
 
 #include <Si4703_Breakout.h>
 #include <Wire.h>
+
+//Pin definitions - Change these according to how your board was hooked up
 int STATUS_LED = 13;
 int resetPin = 4;
-int SDIO = 2; //SDA/A4 on Arduino
+int SDIO = 2;
 int SCLK = 3;
-char printBuffer[50];
-uint16_t si4703_registers[16]; //There are 16 registers, each 16 bits large
 
+//Arrays to hold the channels and RSSI values
+const int nChannels = 101; //Number of channels we'll scan (101 for all possible US)
+int scanFreqs[nChannels]; //This will be automatically set in setup
+int scanRSSI[nChannels]; //Holds the measured RSSI
+
+//Averaging Settings
+const int nAvg = 100;
+int sumRSSI;
+
+//Define some handy constants - change with caution
 #define FAIL  0
 #define SUCCESS  1
 
-#define SI4703 0x10 //0b._001.0000 = I2C address of Si4703 - note that the Wire function assumes non-left-shifted I2C address, not 0b.0010.000W
-#define I2C_FAIL_MAX  10 //This is the number of attempts we will try to contact the device before erroring out
-
-//#define IN_EUROPE //Use this define to setup European FM reception. I wuz there for a day during testing (TEI 2011).
+#define SI4703 0x10 //I2C address of Si4703
+#define I2C_FAIL_MAX  10 //Max connection attempts with device
 
 #define SEEK_DOWN  0 //Direction used for seeking. Default is down
 #define SEEK_UP  1
@@ -78,6 +96,12 @@ uint16_t si4703_registers[16]; //There are 16 registers, each 16 bits large
 #define RDSS  11
 #define STEREO  8
 
+//#define IN_EUROPE // Use if in Europe
+
+char printBuffer[50];
+uint16_t si4703_registers[16]; //There are 16 registers, each 16 bits
+
+
 Si4703_Breakout radio(resetPin, SDIO, SCLK);
 int readChannel(void);
 int channel;
@@ -90,40 +114,50 @@ void setup()
   radio.setVolume(0);  // Set volume low to consume less power.
   Serial.begin(9600);  // Start the serial session.
   si4703_init();  // Start the chip's I2C connection.
-  gotoChannel(875);  // Start at the lowest FM broadcast frequency in MHz/10.
+  gotoChannel(875);  // Start at the lowest FM broadcast frequency 87.5 MHz
+  
+  Serial.println("# FM ATTENUATION RADAR");
+  Serial.print("#");
+  // Setup the scan frequency array and print to terminal for a header
+  for (int i=0; i<nChannels; i+=1){
+    scanFreqs[i] = 879+i*2;
+    Serial.print(scanFreqs[i]);
+    if(i<nChannels-1){
+      Serial.print(",");
+    }
+  }
+  Serial.println();
 }
 
 void loop()
 {
   
-  for (int station=879; station <1080; station +=2){
-   gotoChannel(station);
+  for (int i=0; i<nChannels; i+=1){
+   gotoChannel(scanFreqs[i]);
    delay(500);
    channel = readChannel();  // Check what frequency we're on.
-   Serial.print(channel);  // Tell us what frequency we're on.
-   Serial.print(" ");  // Print a comma as a delimiter.
-   byte rssi = si4703_registers[STATUSRSSI] & 0x00FF;  // Set up a variable called "rssi" and read the RSSI value into it.
-   Serial.println(rssi, DEC);  // Tell us the RSSI in decimal format.
+   if (channel == scanFreqs[i]){
+     sumRSSI = 0;
+     for(int j=0; j<nAvg; j+=1){
+       byte rssi = si4703_registers[STATUSRSSI] & 0x00FF;  // Set up a variable called "rssi" and read the RSSI value into it.
+       sumRSSI += rssi;
+     }
+     scanRSSI[i] = sumRSSI/nAvg;
+   }
+   else{
+     Serial.print("Problem Tuning to: ");
+     Serial.println(scanFreqs[i]);
+   }
   }
   
-  
- // if (Serial.available())  //If we have an open serial port, then:
-  //{
-    //delay(1000);  // Wait a second for stabilization.
-    //channel = readChannel();  // Check what frequency we're on.
-    //Serial.print(channel);  // Tell us what frequency we're on.
-    //Serial.print(" ");  // Print a comma as a delimiter.
-    //byte rssi = si4703_registers[STATUSRSSI] & 0x00FF;  // Set up a variable called "rssi" and read the RSSI value into it.
-    //Serial.println(rssi, DEC);  // Tell us the RSSI in decimal format.
-    //if(channel < 1100)  // If the channel is below the maximum in the FM broadcast band, then:
-   // {
-    //  seek(SEEK_UP);  // Go up by a channel increment (100 kHz in Europe, 200 kHz in the US, where we apparently don't care about band loading.)
-   // } 
-    //else  // Otherwise:
-    //{
-     // gotoChannel(871);  // Go back to the bottom of the band,
-    //} 
-  //}
+  // When the scan is done, dump the output
+  for (int i=0; i<nChannels; i+=1){
+    Serial.print(scanRSSI[i],DEC);
+    if(i<nChannels-1){
+      Serial.print(",");
+    }
+  }
+  Serial.println();
 }
 
 //Given a channel, tune to it
